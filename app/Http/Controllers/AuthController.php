@@ -125,5 +125,26 @@ class AuthController extends Controller
         ]);
     }
 
+
+    //suppresion des utilisateurs 
+
+    public function deleteUtilisateur($id, Request $request)
+    {
+        if (!$request->user()->isAdmin()) {
+            return response()->json(['message' => 'Non autorisé'], 403);
+        }
+
+        $vigile = User::where('id', $id)->where('role', 'vigile')->first();
+
+        if (!$vigile) {
+            return response()->json(['message' => 'utilisateur non trouvé'], 404);
+        }
+
+        $vigile->delete();
+
+        return response()->json(['message' => 'utilisateur supprimé avec succès']);
+    }
+
+
         
 }

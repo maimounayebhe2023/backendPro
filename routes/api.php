@@ -30,6 +30,7 @@ Route::patch('/modifier/{id}', [EnregistrementController::class, 'modifier']);
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
+//Pour modofier un utilisateur
 Route::patch('/utilisateurs/{id}', [AuthController::class, 'updateUtilisateur']);
 
  //Fonction pour recuperer un enregistrement specifique 
@@ -37,6 +38,7 @@ Route::patch('/utilisateurs/{id}', [AuthController::class, 'updateUtilisateur'])
 //Des Routes pour l'admin
 Route::post('/login', [AuthController::class, 'login'])->name('login');
 Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+//Pour ajouter un utilisateur
 Route::middleware(['auth:sanctum', 'admin'])->post('/admin/create-vigile', [AuthController::class, 'createVigile']);
 Route::middleware('auth:sanctum')->group( function() { 
     //AJOUTER UN ENREGISTREMENT
@@ -48,7 +50,7 @@ Route::middleware('auth:sanctum')->group( function() {
     //FONCTION POUR RECUPERER TOUS LES ENREGISTREMENTS 
     Route::get('index', [EnregistrementController::class, 'index']);
 
-   
+   //Liste des utilisateurs
     Route::get('/utilisateurs', [AuthController::class, 'listeUtilisateurs']);
 
     //RECUPERER TOUS LES ENREGISTREMENTS AVEC UNE PLAGE DE DONNEE
@@ -57,6 +59,13 @@ Route::middleware('auth:sanctum')->group( function() {
     //
     Route::get('/statistiques', [EnregistrementController::class, 'stati']);
     Route::patch('utilisateurs/{id}', [AuthController::class, 'updateUtilisateur']);
+    
+    Route::patch('utilisateurs/{id}', [AuthController::class, 'updateUtilisateur']);
+
+    //Pour supprimer un utilisateur 
+
+    Route::delete('/utilisateurs/sup/{id}', [AuthController::class, 'deleteUtilisateur']);
+
 });
 Route::get('/login', function () {
     return response()->json(['message' => 'Veuillez vous connecter'], 401);
