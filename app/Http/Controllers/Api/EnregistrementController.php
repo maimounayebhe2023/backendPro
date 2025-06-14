@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Http;
 use App\Models\Categorie;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use GuzzleHttp\Client;
 class EnregistrementController extends Controller
 {
     
@@ -77,90 +78,83 @@ class EnregistrementController extends Controller
     } */
     //nimba
 
+
+
     public function ajouter(Request $request)
     {
-         $user = auth()->user();
-       //s dd($request->all());
-        $validated=$request->validate([
+        $user = auth()->user();
+
+        $validated = $request->validate([
             'nom' => 'required|string',
             'prenom' => 'required|string',
-            'tel' => 'required|string',
+            'tel' => 'required|string|regex:/^\d{8,15}$/',
             'plaque_immatricu' => 'required|string',
             'type_engin' => 'required|string',
             'categorie_nom' => 'required|string',
             'date_sortie' => 'nullable|date',
         ]);
-        $categorie = Categorie::firstOrNew([ 'nom' =>
-            $validated['categorie_nom']
-        ]);
 
-        if(!$categorie->exists){
-            $categorie->save(); 
-        }
+        $categorie = Categorie::firstOrCreate(['nom' => $validated['categorie_nom']]);
 
-        $conducteur = Conducteur::where('tel', $validated['tel'])->first();
-
-        if(!$conducteur) {
-            $conducteur = new Conducteur([
+        $conducteur = Conducteur::firstOrCreate(
+            ['tel' => $validated['tel']],
+            [
                 'nom' => $validated['nom'],
                 'prenom' => $validated['prenom'],
-                'tel' => $validated['tel'],
-                'categorie_id' =>$categorie->id ,
-            ]);
-            $conducteur->save(); 
-        }
+                'categorie_id' => $categorie->id,
+            ]
+        );
 
-        $engin = Engin::firstOrNew([ 
-        'plaque_immatricu' => $validated['plaque_immatricu'],
-        'type_engin'=>  $validated['type_engin']
+         $engin = Engin::firstOrNew([ 
+            'plaque_immatricu' => $validated['plaque_immatricu'],
+            'type_engin'=>  $validated['type_engin']
          ]);
-        $engin->save();  
+        $engin->save(); 
+        $codePin = Str::upper(Str::random(5));
 
-        $enregistrement = new Enregistrement ();
+        $enregistrement = new Enregistrement();
         $enregistrement->conducteur_id = $conducteur->id;
         $enregistrement->engin_id = $engin->id;
-        $enregistrement->code_pin = Str::random(6);
         $enregistrement->user_id = $user->id;
-
-        if (isset($validated['date_sortie'])) {
-            $enregistrement->date_sortie = $validated['date_sortie'];
-        }
+        $enregistrement->code_pin = $codePin;
+        $enregistrement->date_sortie = $validated['date_sortie'] ?? null;
         $enregistrement->save();
 
-        
         try {
-            $url = 'https://api.nimbasms.com/v1/messages';
-            $token = base64_encode(env('NIMBA_API_KEY')); 
+            $client = new Client();
 
-            $headers = [
-                'Authorization' => 'Basic ' . $token,
-                'Content-Type' => 'application/json',
-            ];
-
-            $body = [
-                'to' => [$conducteur->tel],
-                'sender_name' => 'SMS 9080',
-                'message' => 'Votre code PIN pour retirer votre engin est : ' . $enregistrement->code_pin,
-            ];
-
-            $response = Http::withHeaders($headers)->post($url, $body);
-
-            if ($response->failed()) {
-                \Log::error('Erreur SMS: ' . $response->body());
+            $numero = $validated['tel'];
+            if (Str::startsWith($numero, '6')) {
+                $numero = '224' . $numero; 
             }
+
+            $message ="  Lanala vie : 
+                    Bonjour {$conducteur->prenom},\n"
+                 . "Votre enregistrement a été effectué avec succès.\n"
+                 . "Engin : {$engin->plaque_immatricu}\n"
+                 . "Code PIN : {$codePin}\n"
+                 . "Veuillez conserver ce code : il vous sera demandé pour récupérer votre engin.";
+
+
+            $response = Http::get('https://apisms.dbafrica.net/apisms/api/sms/send/status?sender=LANALA VIE&source=testSoutenance&msisdn={$conducteur->tel}&message= Lanala vie $message');
+
+            $smsResponse = json_decode($response->getBody(), true);
         } catch (\Exception $e) {
-            \Log::error('Exception lors de l’envoi du SMS : ' . $e->getMessage());
+            $smsResponse = ['error' => 'Échec de l’envoi du SMS', 'exception' => $e->getMessage()];
         }
 
         return response()->json([
             'message' => 'Enregistrement réussi',
-            'enregistrement' => $enregistrement, 
-            'conducteur' => $conducteur, 
-            'engin' => $engin, 
+            'code_pin' => $codePin,
+            'enregistrement' => $enregistrement,
+            'conducteur' => $conducteur,
+            'engin' => $engin,
             'categorie' => $categorie,
-            'user_id' => $user
+            'user' => $user,
+            'sms' => $smsResponse,
         ]);
     }
+
 
     //fonction modifier un registrement
     public function modifier(Request $request, $id)
@@ -218,41 +212,86 @@ class EnregistrementController extends Controller
         ]);
     }
 
-
-   // FONCTION POUR LISTER LES ENREGISTREMENTS   POUR UNE PLAGE DE DATE
-
-   public function indexParDate(Request $request)
+// Plage de date
+  /* public function indexParDate(Request $request)
     {
         $dateDebut = $request->input('date_debut');
         $dateFin = $request->input('date_fin');
-    
+
         $query = Enregistrement::with(['conducteur', 'engin']);
-    
+
         if ($dateDebut && $dateFin) {
             $query->whereBetween('created_at', [$dateDebut . ' 00:00:00', $dateFin . ' 23:59:59']);
         }
-    
+
         $enregistrements = $query->orderBy('created_at', 'desc')->get();
-    
+
         if ($enregistrements->isEmpty()) {
             return response()->json([
                 'message' => 'Aucun enregistrement trouvé'
             ], 201);
         }
-    
+
         $resultats = $enregistrements->map(function ($enregistrement) {
             return [
-                'date_enregistrement' => $enregistrement->created_at->format('Y-m-d H:i'),
-                'date_sortie' => $enregistrement->date_sortie,
+                'id' => $enregistrement->id,
+                'date_enregistrement' => $enregistrement->created_at->format('Y-m-d'),
                 'nom_conducteur' => $enregistrement->conducteur->nom,
                 'prenom_conducteur' => $enregistrement->conducteur->prenom,
-                'plaque_immatricu' => optional($enregistrement->engin)->plaque_immatricu,
-                'type_engin' => optional($enregistrement->engin)->type_engin,
+                'plaque_engin' => optional($enregistrement->engin)->plaque_immatricu,
+                'typeengin' => optional($enregistrement->engin)->type_engin,
+                'date_sortie' => $enregistrement->date_sortie,
+                'code_pin' => $enregistrement->code_pin,
+                'tel' => $enregistrement->conducteur->telephone,
             ];
         });
-    
-        return response()->json($resultats);
-    }
+
+        //return response()->json($resultats);
+
+        dd($resultats);
+    }*/
+
+        public function indexParDate(Request $request)
+        {
+            $dateDebut = $request->input('date_debut');
+            $dateFin = $request->input('date_fin');
+
+            // Si une des deux dates est manquante, retourner un message
+            if (!$dateDebut || !$dateFin) {
+                return response()->json([
+                    'message' => 'Les deux dates (date_debut et date_fin) sont obligatoires.'
+                ], 400); // 400 = Bad Request
+            }
+
+            $enregistrements = Enregistrement::with(['conducteur', 'engin'])
+                ->whereBetween('created_at', [$dateDebut . ' 00:00:00', $dateFin . ' 23:59:59'])
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            if ($enregistrements->isEmpty()) {
+                return response()->json([
+                    'message' => 'Aucun enregistrement trouvé'
+                ], 204); // 204 = No Content
+            }
+
+            $resultats = $enregistrements->map(function ($enregistrement) {
+                return [
+                    'id' => $enregistrement->id,
+                    'date_enregistrement' => $enregistrement->created_at->format('Y-m-d H:i'),
+                    'nom_conducteur' => $enregistrement->conducteur->nom ?? '',
+                    'prenom_conducteur' => $enregistrement->conducteur->prenom ?? '',
+                    'plaque_engin' => optional($enregistrement->engin)->plaque_immatricu ?? '',
+                    'typeengin' => optional($enregistrement->engin)->type_engin ?? '',
+                    'date_sortie' => $enregistrement->date_sortie,
+                    'code_pin' => $enregistrement->code_pin,
+                    'tel' => $enregistrement->conducteur->telephone ?? '',
+                ];
+            });
+
+            return response()->json($resultats);
+        }
+
+
     //FONCTION POUR RECUPERER LES ENREGISTREMENT D'UN ENGIN
     
     public function getEnregistrementsParEngin($plaque_immatricu)

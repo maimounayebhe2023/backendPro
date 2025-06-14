@@ -134,7 +134,7 @@ class AuthController extends Controller
             return response()->json(['message' => 'Non autorisé'], 403);
         }
 
-        $vigile = User::where('id', $id)->where('role', 'vigile')->first();
+        $vigile = User::where('id', $id)->first();
 
         if (!$vigile) {
             return response()->json(['message' => 'utilisateur non trouvé'], 404);
