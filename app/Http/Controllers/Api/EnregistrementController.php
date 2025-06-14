@@ -271,7 +271,7 @@ class EnregistrementController extends Controller
             if ($enregistrements->isEmpty()) {
                 return response()->json([
                     'message' => 'Aucun enregistrement trouvé'
-                ], 204); // 204 = No Content
+                ]); // 204 = No Content
             }
 
             $resultats = $enregistrements->map(function ($enregistrement) {
