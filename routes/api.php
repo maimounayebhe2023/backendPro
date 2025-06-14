@@ -24,7 +24,9 @@ Route::get('enregistrement/{code}', [EnregistrementController::class, 'Show']);
 
 // 
 //FONCTION POUR MODIFIER UN ENREGISTRMENT 
-Route::patch('/modifier/{id}', [EnregistrementController::class, 'modifier']);
+
+Route::patch('modifier/{id}', [EnregistrementController::class, 'modifier']);
+
 
 //Auth
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {

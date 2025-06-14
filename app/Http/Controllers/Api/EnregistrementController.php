@@ -136,11 +136,11 @@ class EnregistrementController extends Controller
                  . "Veuillez conserver ce code : il vous sera demandé pour récupérer votre engin.";
 
 
-            $response = Http::get('https://apisms.dbafrica.net/apisms/api/sms/send/status?sender=LANALA VIE&source=testSoutenance&msisdn={$conducteur->tel}&message= Lanala vie $message');
+            $response = Http::get('https://apisms.dbafrica.net/apisms/api/sms/send/status?sender=LANALA VIE&source=testSoutenance&msisdn=' . $conducteur->tel . '&message=' . urlencode($message));
 
             $smsResponse = json_decode($response->getBody(), true);
         } catch (\Exception $e) {
-            $smsResponse = ['error' => 'Échec de l’envoi du SMS', 'exception' => $e->getMessage()];
+            $smsResponse = ['error' => 'Échec de l\'envoi du SMS', 'exception' => $e->getMessage()];
         }
 
         return response()->json([
@@ -156,61 +156,64 @@ class EnregistrementController extends Controller
     }
 
 
-    //fonction modifier un registrement
-    public function modifier(Request $request, $id)
-    {
-        $enregistrement = Enregistrement::findOrFail($id);
+   public function modifier(Request $request, $id)
+{
+    $enregistrement = Enregistrement::findOrFail($id);
 
-        $validated = $request->validate([
-            'nom' => 'required|string',
-            'prenom' => 'required|string',
-            'tel' => 'required|string',
-            'plaque_immatricu' => 'required|string',
-            'type_engin' => 'required|string',
-            'categorie_nom' => 'required|string',
-            'date_sortie' => 'sometimes|nullable|date'
-        ]);
+    $validated = $request->validate([
+        'nom' => 'sometimes|string',
+        'prenom' => 'sometimes|string',
+        'tel' => 'sometimes|string',
+        'plaque_immatricu' => 'sometimes|string',
+        'type_engin' => 'sometimes|string',
+        'categorie_nom' => 'sometimes|string',
+    ]);
 
-        // Si le numéro de téléphone est mis à jour, on retrouve le conducteur
-        if (isset($validated['tel'])) {
-            $conducteur = Conducteur::where('tel', $validated['tel'])->first();
-            if (!$conducteur) {
-                $conducteur = new Conducteur([
-                    'nom' => $validated['nom'] ?? '',
-                    'prenom' => $validated['prenom'] ?? '',
-                    'tel' => $validated['tel'],
-                ]);
-                if (isset($validated['categorie_nom'])) {
-                    $categorie = Categorie::firstOrCreate(['nom' => $validated['categorie_nom']]);
-                    $conducteur->categorie_id = $categorie->id;
-                }
-                $conducteur->save();
-            }
-            $enregistrement->conducteur_id = $conducteur->id;
-        }
-
-        // Si l'engin est mis à jour
-        if (isset($validated['plaque_immatricu']) || isset($validated['type_engin'])) {
-            $engin = Engin::firstOrNew([
-                'plaque_immatricu' => $validated['plaque_immatricu'] ?? $enregistrement->engin->plaque_immatricu,
-                'type_engin' => $validated['type_engin'] ?? $enregistrement->engin->type_engin,
-            ]);
-            $engin->save();
-            $enregistrement->engin_id = $engin->id;
-        }
-
-        // Si une nouvelle date sortie est donnée
-        if (isset($validated['date_sortie'])) {
-            $enregistrement->date_sortie = $validated['date_sortie'];
-        }
-
-        $enregistrement->save();
-
-        return response()->json([
-            'message' => 'Mise à jour effectuée avec succès.',
-            'enregistrement' => $enregistrement
-        ]);
+    // ✅ Création ou récupération de la catégorie si présente dans la requête
+    if ($request->has('categorie_nom')) {
+        $categorie = Categorie::firstOrCreate(['nom' => $validated['categorie_nom']]);
     }
+
+    // ✅ Mise à jour du conducteur
+    if ($enregistrement->conducteur) {
+        $conducteur = $enregistrement->conducteur;
+
+        if ($request->has('nom')) {
+            $conducteur->nom = $request->nom;
+        }
+        if ($request->has('prenom')) {
+            $conducteur->prenom = $request->prenom;
+        }
+        if ($request->has('tel')) {
+            $conducteur->tel = $request->tel;
+        }
+        if (isset($categorie)) {
+            $conducteur->categorie_id = $categorie->id;
+        }
+
+        $conducteur->save();
+    }
+
+    // ✅ Mise à jour de l'engin
+    if ($enregistrement->engin) {
+        $engin = $enregistrement->engin;
+
+        if ($request->has('plaque_immatricu')) {
+            $engin->plaque_immatricu = $request->plaque_immatricu;
+        }
+        if ($request->has('type_engin')) {
+            $engin->type_engin = $request->type_engin;
+        }
+
+        $engin->save();
+    }
+
+    return response()->json([
+        'message' => 'Mise à jour effectuée avec succès',
+        'enregistrement' => $enregistrement->load('conducteur.categorie', 'engin'),
+    ]);
+}
+
 
 // Plage de date
   /* public function indexParDate(Request $request)
@@ -260,7 +263,7 @@ class EnregistrementController extends Controller
             if (!$dateDebut || !$dateFin) {
                 return response()->json([
                     'message' => 'Les deux dates (date_debut et date_fin) sont obligatoires.'
-                ], 400); // 400 = Bad Request
+                ], 400);
             }
 
             $enregistrements = Enregistrement::with(['conducteur', 'engin'])
@@ -271,7 +274,7 @@ class EnregistrementController extends Controller
             if ($enregistrements->isEmpty()) {
                 return response()->json([
                     'message' => 'Aucun enregistrement trouvé'
-                ]); // 204 = No Content
+                ]); 
             }
 
             $resultats = $enregistrements->map(function ($enregistrement) {
