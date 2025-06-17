@@ -10,7 +10,10 @@ use Illuminate\Support\Facades\Http;
 use App\Models\Categorie;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Client;
+
+
 class EnregistrementController extends Controller
 {
     
@@ -119,28 +122,50 @@ class EnregistrementController extends Controller
         $enregistrement->code_pin = $codePin;
         $enregistrement->date_sortie = $validated['date_sortie'] ?? null;
         $enregistrement->save();
-
+        
+        
         try {
-            $client = new Client();
+             $client = new Client([
+                'verify' => false // <--- désactive la vérification SSL
+            ]);
 
-            $numero = $validated['tel'];
-            if (Str::startsWith($numero, '6')) {
-                $numero = '224' . $numero; 
+
+            $tel = $conducteur->tel;
+
+           $message = "Bonjour {$conducteur->prenom} {$conducteur->nom},\n" .
+           "Votre enregistrement a été effectué avec succès.\n" .
+           "Engin : {$engin->plaque_immatricu}\n" .
+           "Code PIN : {$enregistrement->code_pin}\n" .
+           "Veuillez conserver ce code. Il vous sera demandé pour récupérer votre {$engin->type_engin}.";
+
+
+            $smsResponse = $client->request('GET', 'https://apisms.dbafrica.net/apisms/api/sms/send/status', [
+                'query' => [
+                    'sender'  => 'LANALA VIE',
+                    'source'  => 'testSoutenance',
+                    'msisdn'  => $tel,
+                    'message' => $message
+                ],
+                'headers' => [
+                    'User-Agent' => 'insomnia/9.2.0',
+                    'token'      => '$2y$10$usVfhCJWNENdm61bFGIGSetl.kpZQONdMm4w9oto8.dsDF/miYYaO' // Ne jamais entourer un token de $ si c'est une valeur fixe
+                ]
+           ]);
+
+
+            $body = $smsResponse->getBody()->getContents();
+            echo "<pre>";
+            print_r(json_decode($body, true));
+            echo "</pre>";
+
+
+          //  $body = $smsResponse->getBody()->getContents();
+           // echo $body;
+        } catch (RequestException $e) {
+            echo "Erreur : " . $e->getMessage();
+            if ($e->hasResponse()) {
+                echo "Réponse : " . $e->getResponse()->getBody()->getContents();
             }
-
-            $message ="  Lanala vie : 
-                    Bonjour {$conducteur->prenom},\n"
-                 . "Votre enregistrement a été effectué avec succès.\n"
-                 . "Engin : {$engin->plaque_immatricu}\n"
-                 . "Code PIN : {$codePin}\n"
-                 . "Veuillez conserver ce code : il vous sera demandé pour récupérer votre engin.";
-
-
-            $response = Http::get('https://apisms.dbafrica.net/apisms/api/sms/send/status?sender=LANALA VIE&source=testSoutenance&msisdn=' . $conducteur->tel . '&message=' . urlencode($message));
-
-            $smsResponse = json_decode($response->getBody(), true);
-        } catch (\Exception $e) {
-            $smsResponse = ['error' => 'Échec de l\'envoi du SMS', 'exception' => $e->getMessage()];
         }
 
         return response()->json([
@@ -151,7 +176,7 @@ class EnregistrementController extends Controller
             'engin' => $engin,
             'categorie' => $categorie,
             'user' => $user,
-            'sms' => $smsResponse,
+           // 'sms' => $smsResponse,
         ]);
     }
 
